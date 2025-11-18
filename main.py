@@ -10,6 +10,7 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 from aiogram.filters import CommandStart
+from aiogram.client.default import DefaultBotProperties  # ✅ bagong import
 
 # ========= CONFIG =========
 
@@ -49,7 +50,10 @@ def get_config(chat_id: int) -> dict:
 
 # ========= BOT SETUP =========
 
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode="HTML"),  # ✅ bagong paraan
+)
 dp = Dispatcher()
 
 
