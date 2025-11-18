@@ -1,5 +1,6 @@
 import os
 import asyncio
+import random
 from contextlib import suppress
 from urllib.parse import quote  # para sa tamang pag-encode ng link
 
@@ -34,13 +35,8 @@ DEFAULT_CONFIG = {
     "delete_leave_system_msg": True,
     "delete_pinned_service_msg": True,
     "welcome_enabled": True,
-    "welcome_text": (
-        "🫦 <b>WELCOME!</b>\n\n"
-        "🔐 <b>LOCKED CHANNEL MODE</b>\n"
-        "To unlock the channel, <b>share</b> this channel 3 times using the button below,\n"
-        "then tap <b>JOIN NOW</b> to continue. 😈🔥"
-    ),
-    "welcome_autodelete_seconds": 0,  # 0 = huwag auto-delete yung lock message
+    # auto-delete timer (extra, pero 0 = off; main delete trigger = next new user)
+    "welcome_autodelete_seconds": 0,
 }
 
 # In-memory lang muna (per chat_id)
@@ -51,9 +47,48 @@ def get_config(chat_id: int) -> dict:
     cfg = GROUP_CONFIG.get(chat_id)
     if not cfg:
         cfg = DEFAULT_CONFIG.copy()
-        cfg["last_lock_msg_id"] = None
+        # list ng mga welcome message IDs na dapat burahin pag may next na papasok
+        cfg["welcome_msg_ids"] = []
         GROUP_CONFIG[chat_id] = cfg
+    # siguraduhin may key kahit old version
+    cfg.setdefault("welcome_msg_ids", [])
     return cfg
+
+
+# ========= RANDOMIZED SEDUCTIVE LINES =========
+
+WELCOME_LINES: list[str] = [
+    "🫦 <b>{name}</b>… pasok ka na, wag ka lang lalabas nang hindi nagshashare. 😈",
+    "😈 Hoy <b>{name}</b>, huwag kang mahiyâ… share ka muna bago ka magpakasarap dito.",
+    "🔥 <b>{name}</b>, sakto dating mo… ready ka na ba sa kalat ng {chat}? Share muna ha.",
+    "👀 <b>{name}</b>, napansin ka na namin… 3 shares lang, tapos buong {chat} na ang bahala sa’yo.",
+    "💋 <b>{name}</b>, wag ka muna umupo — share ka muna, tapos saka ka namin papainitin.",
+    "🥵 Teka lang <b>{name}</b>… bago ka mag-enjoy, pa-share ka muna ng channel ha.",
+    "😏 <b>{name}</b>, hindi ka makakatakas… share mo muna ‘to 3x bago ka tuluyang malock-in.",
+    "🖤 <b>{name}</b>, welcome sa {chat}… dito bawal KJ, share muna bago sumali sa kalat.",
+    "🤭 <b>{name}</b> ah… ang lakas ng aura mo… pero mas lalakas ‘yan pag nag-share ka na. 😈",
+    "💦 <b>{name}</b>, wag ka kabahan… simple lang rules: share 3x, then lapag na nang todo.",
+    "🫦 <b>{name}</b>, tingin pa lang, alam na… pero prove it — share mo muna ‘to.",
+    "🔥 <b>{name}</b>, welcome… dito nauubos ang hiya. Start muna sa share bago iba ang maubos. 😉",
+    "😈 <b>{name}</b>, di ka aksidenteng napadpad dito… share mo muna ‘to para tuloy-tuloy na ang tadhana.",
+    "👅 <b>{name}</b>, wag ka magpaka-innocent… alam namin kaya mong mag-share. 3x lang oh.",
+    "💋 <b>{name}</b>, unlock muna bago ka magpakawild sa {chat}. Share button na, dali.",
+    "🖤 <b>{name}</b>, dito sa {chat}, isang share mo lang… alam mo na sunod. Pero 3 muna ha. 😏",
+    "🤤 <b>{name}</b>, hindi namin bibitawan ang pangalang ‘yan… lalo na pag nag-share ka na.",
+    "😈 <b>{name}</b>, share mo ‘to sa iba… para hindi lang ikaw ang malalaglag dito.",
+    "🔥 <b>{name}</b>, pinaghandaan ka ng {chat}… pero share mo muna, warm-up lang ‘yan.",
+    "🫦 <b>{name}</b>, welcome sa problema mong masarap… pero start tayo sa share, hindi agad sa kalat.",
+    "💦 <b>{name}</b>, kung mainit ka na ngayon… wait ka lang pag na-unlock mo na lahat.",
+    "👀 <b>{name}</b>, kalma lang… isang share, dalawang share, tatlong share… tapos bahala na si {chat}.",
+    "💋 <b>{name}</b>, wag mo pigilan sarili mo… share mo na ‘to, gusto ka rin naman ng channel eh.",
+    "😏 <b>{name}</b>, nandito ka na, huwag ka na magpanggap. Share 3x tapos sabay-sabay na tayong maligaw.",
+    "🔥 <b>{name}</b>, feel at home ka lang… pero ‘home’ starts after 3 shares. 😈",
+    "🖤 <b>{name}</b>, ang sarap ng timing mo… sakto sa oras ng kalat. Share muna bago ka sumabay.",
+    "🤭 <b>{name}</b>, kung ito pa lang kinikilig ka na… mas masarap pag na-unlock mo na lahat.",
+    "😈 <b>{name}</b>, rules are simple: share, enjoy, ulit. Start tayo sa first step — share mo na.",
+    "🫦 <b>{name}</b>, wag mo nang hintayin ma-miss out ka… share mo na ‘to bago ka pa namin hanapin.",
+    "💋 <b>{name}</b>, welcome sa {chat}… kung ready ka na, alam mo na gagawin: pindutin ang share. 😏",
+]
 
 
 # ========= BOT SETUP =========
@@ -95,7 +130,7 @@ def make_lock_keyboard(share_count: int = 0) -> InlineKeyboardMarkup:
 # ========= HELPERS =========
 
 async def delete_later(chat_id: int, msg_id: int, delay: int):
-    """Optional helper kung gusto mong auto-delete mga messages."""
+    """Optional helper kung gusto mong auto-delete mga messages (extra, di required)."""
     try:
         await asyncio.sleep(delay)
         await bot.delete_message(chat_id, msg_id)
@@ -109,7 +144,7 @@ async def delete_later(chat_id: int, msg_id: int, delay: int):
 async def cmd_start(message: Message):
     await message.answer(
         "Hi! Add me sa group as admin (may delete rights) para "
-        "ma-auto-clean ko yung system notes at ma-send ko yung lock welcome message. 🤖"
+        "ma-auto-clean ko yung system notes at mag-welcome sa mga bagong papasok. 🤖"
     )
 
 
@@ -123,36 +158,45 @@ async def on_new_members(message: Message):
         with suppress(Exception):
             await bot.delete_message(chat_id, message.message_id)
 
-    # 2) Delete previous lock message (para laging isa lang sa chat)
-    last_id = cfg.get("last_lock_msg_id")
-    if last_id:
-        with suppress(Exception):
-            await bot.delete_message(chat_id, last_id)
-
     if not cfg["welcome_enabled"]:
         return
 
-    # 3) Optional: send sticker kung may WELCOME_STICKER_ID
-    if WELCOME_STICKER_ID:
+    chat_title = message.chat.title or "this chat"
+
+    # 2) BURAHIN LAHAT NG LUMANG WELCOME MESSAGES bago gumawa ng bago
+    old_ids = cfg.get("welcome_msg_ids", [])
+    for mid in old_ids:
         with suppress(Exception):
-            await bot.send_sticker(chat_id, WELCOME_STICKER_ID)
+            await bot.delete_message(chat_id, mid)
+    cfg["welcome_msg_ids"] = []
 
-    # 4) Send new lock-style welcome message
-    text = cfg["welcome_text"]
+    # 3) For EACH new member, send sariling welcome
+    for user in message.new_chat_members:
+        # "name lang" — no @username
+        name = user.full_name
 
-    sent = await bot.send_message(
-        chat_id,
-        text,
-        reply_markup=make_lock_keyboard(share_count=0),
-    )
+        # optional sticker
+        if WELCOME_STICKER_ID:
+            with suppress(Exception):
+                await bot.send_sticker(chat_id, WELCOME_STICKER_ID)
 
-    # 5) Save as last lock message
-    cfg["last_lock_msg_id"] = sent.message_id
+        # random seductive line
+        line_template = random.choice(WELCOME_LINES)
+        text = line_template.format(name=name, chat=chat_title)
 
-    # 6) Optional: auto-delete welcome lock message after X seconds
-    seconds = cfg.get("welcome_autodelete_seconds", 0)
-    if seconds and seconds > 0:
-        asyncio.create_task(delete_later(chat_id, sent.message_id, seconds))
+        sent = await bot.send_message(
+            chat_id,
+            text,
+            reply_markup=make_lock_keyboard(share_count=0),
+        )
+
+        # i-store yung ID para mabura sa susunod na may papasok
+        cfg["welcome_msg_ids"].append(sent.message_id)
+
+        # extra option: auto-delete after X seconds (optional lang)
+        seconds = cfg.get("welcome_autodelete_seconds", 0)
+        if seconds and seconds > 0:
+            asyncio.create_task(delete_later(chat_id, sent.message_id, seconds))
 
 
 @dp.message(F.left_chat_member)
