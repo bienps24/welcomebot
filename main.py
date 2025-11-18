@@ -110,12 +110,12 @@ def make_lock_keyboard(share_count: int = 0) -> InlineKeyboardMarkup:
     encoded_link = quote(CHANNEL_LINK, safe="")
 
     share_btn = InlineKeyboardButton(
-        text=f"𝙎𝙃𝘼𝙍𝙀({share_count}/3) - 𝑷𝑰𝑵𝑨𝒀 𝑳𝑨𝑷𝑨𝑮𝑨𝑵 𝑻𝑨𝑹𝑨💦",
-        url=f"https://t.me/share/url?url={encoded_link}&text=Join%20this%20channel",
+        text=f"𝙎𝙃𝘼𝙍𝙀({share_count}/3)",
+        url=f"https://t.me/share/url?url={encoded_link}&text=𝑷𝑰𝑵𝑨𝒀%20𝑳𝑨𝑷𝑨𝑮𝑨𝑵%20𝑻𝑨𝑹𝑨💦",
     )
 
     join_btn = InlineKeyboardButton(
-        text="JOIN NOW",
+        text="𝗝𝗢𝗜𝗡 𝗡𝗢𝗪",
         callback_data="join_now",
     )
 
